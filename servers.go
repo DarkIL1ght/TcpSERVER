@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"time"
 )
 
 func startserver(port string) {
@@ -14,14 +13,14 @@ func startserver(port string) {
 	}
 	defer listener.Close()
 	server := NewServer()
+	go server.Run()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
 		fmt.Println("Accepted new connection", conn.RemoteAddr())
-		server.connects = append(server.connects, conn)
-		go handle(conn, &server)
+		go handle(conn, server)
 	}
 }
 
@@ -31,7 +30,19 @@ func handle(conn net.Conn, server *Server) {
 
 	fmt.Println("Client connected:", conn.RemoteAddr())
 
-	writeonlytoclient("Welcome! What is your name?\r\n", conn)
+	client := Client{
+		Name: "anonymous",
+		conn: conn,
+		out:  make(chan string, 128),
+	}
+
+	server.Register(&client)
+
+	defer server.Unregister(&client)
+
+	go clientWriter(&client)
+
+	clientSend(&client, "Welcome! What is your name?\r\n")
 
 	nameLine, err := reader.ReadString('\n')
 	if err != nil {
@@ -42,29 +53,24 @@ func handle(conn net.Conn, server *Server) {
 	if name == "" {
 		name = "anonymous"
 	}
+	client.Name = normalizeUserText(name)
 
-	client := Client{
-		Name: name,
-		conn: conn,
-	}
-	writeonlytoclient("\rWelcome to my server: "+client.Name+"\r\n", conn)
-
-	writeother(server, "\rNew user "+client.Name+" joined\r\n", conn)
+	clientSend(&client, "\rWelcome to my server: "+client.Name+"\r\n")
+	server.Broadcast(MessageEvent{from: &Client{Name: "Server"}, text: "New user " + client.Name + " joined"})
 
 	fmt.Printf("New user {%s} joined\r\n", client.Name)
 
 	for {
-		writeonlytoclient("["+time.Now().Format("2006-01-02 15:04:05")+"] "+client.Name+": ", conn)
-
 		message, err := reader.ReadString('\n')
 
 		if err != nil {
 			fmt.Println("Client disconnected:", conn.RemoteAddr())
-			writeother(server, "Client disconnected: "+client.Name+"\r\n", nil)
+			server.Broadcast(MessageEvent{from: &Client{Name: "Server"}, text: "Client disconnected: " + client.Name})
 			return
 		}
 
 		msg := textRefactor(message)
+		msg = normalizeUserText(msg)
 		if msg == "" {
 			continue
 		}
@@ -77,12 +83,7 @@ func handle(conn net.Conn, server *Server) {
 			continue
 		}
 
-		mes := Message{Name: client.Name, Time: time.Now(), Message: msg}
-		text := mes.NewMessage()
-		writeother(server, text, conn)
-		fmt.Printf(text)
-
-		HistoryMassive = append(HistoryMassive, text)
+		server.Broadcast(broadcastText(msg, &client))
 
 	}
 }

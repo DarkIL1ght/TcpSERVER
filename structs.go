@@ -49,3 +49,40 @@ func NewServer() *Server {
 		clients:    make(map[*Client]struct{}),
 	}
 }
+
+func (m *Server) Register(client *Client) {
+	m.register <- client
+}
+
+func (m *Server) Unregister(client *Client) {
+	m.unregister <- client
+}
+func (m *Server) Broadcast(message MessageEvent) {
+	m.broadcast <- message
+}
+func (m *Server) Run() {
+	for {
+		select {
+		case c := <-m.register:
+			m.clients[c] = struct{}{}
+		case c := <-m.unregister:
+			if _, ok := m.clients[c]; ok {
+				delete(m.clients, c)
+				// Stop the per-client writer goroutine.
+				close(c.out)
+			}
+		case message := <-m.broadcast:
+			for s := range m.clients {
+				// Do not send the message back to the author.
+				if message.from != nil && message.from.conn == s.conn {
+					continue
+				}
+				// Best-effort: don't let a slow client block the whole server.
+				select {
+				case s.out <- mesToText(message):
+				default:
+				}
+			}
+		}
+	}
+}
