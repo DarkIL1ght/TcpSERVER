@@ -5,8 +5,6 @@ import (
 	"os"
 )
 
-var HistoryMassive []string
-
 func main() {
 
 	port := "8989"
