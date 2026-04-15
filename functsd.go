@@ -11,14 +11,11 @@ func textRefactor(text string) string {
 }
 
 func normalizeUserText(s string) string {
-	// Apply backspaces (BS/DEL) and strip terminal control / escape sequences so we
-	// don't broadcast cursor movement to other clients.
 	out := make([]rune, 0, len(s))
 	inEsc := false
 
 	for _, r := range s {
 		if inEsc {
-			// Rough ANSI/VT escape stripping: end on final byte (@..~).
 			if r >= '@' && r <= '~' {
 				inEsc = false
 			}
@@ -26,17 +23,16 @@ func normalizeUserText(s string) string {
 		}
 
 		switch r {
-		case '\x1b': // ESC
+		case '\x1b':
 			inEsc = true
 			continue
-		case '\b', 0x7f: // BS or DEL
+		case '\b', 0x7f:
 			if len(out) > 0 {
 				out = out[:len(out)-1]
 			}
 			continue
 		}
 
-		// Drop other control chars.
 		if r < 0x20 {
 			continue
 		}
@@ -92,7 +88,6 @@ func clientWriter(client *Client) {
 }
 
 func mesToText(mes MessageEvent) string {
-	// Leading CRLF helps keep messages from gluing into the receiver's current input line.
 	return "\r\n[" + time.Now().Format("2006-01-02 15:04:05") + "] " + mes.from.Name + ": " + mes.text + "\r\n"
 }
 
